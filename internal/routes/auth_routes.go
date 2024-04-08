@@ -22,4 +22,5 @@ func AuthRoutes(router *gin.Engine) {
 	AUTH.POST("/register", handlers.RegisterUser())
 	AUTH.POST("/login", handlers.LoginUser())
 	AUTH.GET("/verify-email", handlers.VerifyEmailVerificationToken())
+	AUTH.POST("/resend-verify-email", handlers.ResendEmailVerificationToken())
 }

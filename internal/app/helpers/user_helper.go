@@ -30,6 +30,8 @@ type SignedDetails struct {
 var userCollection *mongo.Collection
 var verificationTokensCollection *mongo.Collection
 
+const VALIDATION_TOKEN_TTL = 30 // In minutes
+
 func init() {
 	var err error
 	userCollection, err = database.OpenCollection(database.Client, "users")
@@ -193,7 +195,7 @@ func UserEmailExists(email string) (exists bool, err error) {
 // Update the user document in MongoDB to include the verification token.
 func StoreVerificationToken(userId, verificationToken string) error {
 	// Set the expiration time for the verification token, e.g., 30 minutes from now
-	expiresAt := time.Now().Add(1 * time.Minute)
+	expiresAt := time.Now().Add(VALIDATION_TOKEN_TTL * time.Minute)
 
 	// Define the document to insert into the verificationTokens collection
 	doc := bson.M{
@@ -234,13 +236,11 @@ func ValidateVerificationToken(token string) (string, error) {
 	// The verification tokens are stored in a MongoDB collection named "verificationTokens"
 	// with documents having fields "verification_token" (string) and "userID" (string).
 	filter := bson.M{"verification_token": token}
-	fmt.Println("error filter:", filter)
 
 	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	err := verificationTokensCollection.FindOne(rootContext, filter).Decode(&result)
-	fmt.Println("error message:", err)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return "", fmt.Errorf("verification token not found")

@@ -2,14 +2,17 @@ package utils
 
 import (
 	"regexp"
+	"strings"
 
 	valid "github.com/asaskevich/govalidator"
-	"github.com/xamuel98/syncspace-backend/internal/models"
+	"github.com/xamuel98/syncspace-backend/internal/requests"
 )
 
 // IsEmpty checks if a string is empty
 func IsEmpty(str string) (bool, string) {
-	if valid.HasWhitespace(str) && str != "" {
+	// Trim leading and trailing white spaces
+	trimmedStr := strings.Trim(str, "")
+	if trimmedStr == "" {
 		return true, "must not be empty"
 	}
 
@@ -17,7 +20,7 @@ func IsEmpty(str string) (bool, string) {
 }
 
 // ValidateRegister func validates the body of user for registration
-func ValidateUser(newUser *models.User) (bool, map[string]string) {
+func ValidateUser(newUser *requests.RegisterUserRequest) (bool, map[string]string) {
 	errors := make(map[string]string)
 
 	// Validate the user first name
@@ -31,10 +34,15 @@ func ValidateUser(newUser *models.User) (bool, map[string]string) {
 	}
 
 	// Validate the user email
-	if isEmailEmpty, errMsg := IsEmpty(newUser.FirstName); isEmailEmpty {
+	if isEmailEmpty, errMsg := IsEmpty(newUser.Email); isEmailEmpty {
 		errors["email"] = "Email " + errMsg
 	} else if !valid.IsEmail(newUser.Email) {
 		errors["email"] = "Must be a valid email address"
+	}
+
+	// Validate the user last name
+	if isUserTypeEmpty, errMsg := IsEmpty(string(newUser.UserType)); isUserTypeEmpty {
+		errors["user_type"] = "User type " + errMsg
 	}
 
 	// Validate the user password

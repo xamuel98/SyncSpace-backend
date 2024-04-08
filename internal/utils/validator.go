@@ -59,5 +59,31 @@ func ValidateUser(newUser *requests.RegisterUserRequest) (bool, map[string]strin
 	}
 
 	return true, nil
+}
 
+// ValidateUserLogin func validates the body of user for login
+func ValidateUserLogin(existingUser *requests.LoginUserRequest) (bool, map[string]string) {
+	errors := make(map[string]string)
+
+	// Validate the user email
+	if isEmailEmpty, errMsg := IsEmpty(existingUser.Email); isEmailEmpty {
+		errors["email"] = "Email " + errMsg
+	} else if !valid.IsEmail(existingUser.Email) {
+		errors["email"] = "Must be a valid email address"
+	}
+
+	// Validate the user password
+	re := regexp.MustCompile("\\d") // regex check for at least one integer in string
+
+	if isPasswordEmpty, errMsg := IsEmpty(existingUser.HashedPassword); isPasswordEmpty {
+		errors["password"] = "Password " + errMsg
+	} else if !(len(existingUser.HashedPassword) >= 8 && valid.HasLowerCase(existingUser.HashedPassword) && valid.HasUpperCase(existingUser.HashedPassword) && re.MatchString(existingUser.HashedPassword)) {
+		errors["password"] = "Length of password should be at least 8 and it must be a combination of uppercase letters, lowercase letters and numbers"
+	}
+
+	if len(errors) > 0 {
+		return false, errors
+	}
+
+	return true, nil
 }

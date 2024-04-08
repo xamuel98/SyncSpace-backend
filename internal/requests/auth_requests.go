@@ -15,3 +15,9 @@ type RegisterUserRequest struct {
 type EmailRequest struct {
 	Email string `json:"email"`
 }
+
+// LoginUserRequest defines the structure for the USER LOGIN request.
+type LoginUserRequest struct {
+	Email          string `json:"email"`
+	HashedPassword string `json:"password"`
+}

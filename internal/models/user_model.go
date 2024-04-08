@@ -19,7 +19,7 @@ type User struct {
 	AudioSettings   AudioSettings `json:"audio_settings" bson:"audio_settings"` // User's audio preferences
 	CreatedAt       time.Time     `json:"created_at" bson:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at" bson:"updated_at"`
-	Token           *string       `json:"token" bson:"token"`
+	Token           *string       `json:"access_token" bson:"token"`
 	RefreshToken    *string       `json:"refresh_token" bson:"refresh_token"`
 }
 

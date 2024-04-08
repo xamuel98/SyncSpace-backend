@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/xamuel98/syncspace-backend/internal/database"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gin-gonic/gin"
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -69,6 +70,17 @@ func MatchUserTypeToUid(ctx *gin.Context, userId string) (err error) {
 
 	err = CheckUserType(ctx, userType)
 	return err
+}
+
+// VerifyPassword checks if the provided clear text password matches the hashed password.
+func VerifyPassword(hashedUserPassword, providedClearTextPassword string) (bool, error) {
+	// Returns nil on success, or an error on failure.
+	err := bcrypt.CompareHashAndPassword([]byte(providedClearTextPassword), []byte(hashedUserPassword))
+	if err != nil {
+		return false, fmt.Errorf("password is incorrect")
+	}
+
+	return true, nil
 }
 
 // Handle the generation and refresh of token & refreshToken using JWT

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/xamuel98/syncspace-backend/internal/app/helpers"
 	helper "github.com/xamuel98/syncspace-backend/internal/app/helpers"
 	database "github.com/xamuel98/syncspace-backend/internal/database"
 	models "github.com/xamuel98/syncspace-backend/internal/models"
@@ -142,7 +143,7 @@ func RegisterUser() gin.HandlerFunc {
 			"refresh_token":     refreshToken,
 		}
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Data: map[string]interface{}{"data": userResponse}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": userResponse}})
 	}
 }
 
@@ -236,8 +237,72 @@ func ResendEmailVerificationToken() gin.HandlerFunc {
 	}
 }
 
+// LoginUser logs in an existing user in the DB into the system
 func LoginUser() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		var user requests.LoginUserRequest // Define a struct to parse the request body
+		var foundUser models.User
 
+		if err := ctx.ShouldBindJSON(&user); err != nil {
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			return
+		}
+
+		// Validate if the email and password are in correct format
+		_, errors := validator.ValidateUserLogin(&user)
+		if errors != nil {
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
+			return
+		}
+
+		filter := bson.M{"email": user.Email}
+
+		rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		// Check if a user with the email is already in the database
+		err := userCollection.FindOne(rootContext, filter).Decode(&foundUser)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Email or password is incorrect"}})
+				return
+			}
+
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err}})
+			return
+		}
+
+		// Verify if the passwords match
+		passwordIsValid, err := helpers.VerifyPassword(user.HashedPassword, foundUser.HashedPassword)
+		// Password is invalid
+		if !passwordIsValid {
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err}})
+			return
+		}
+
+		// Email address does not exist
+		if foundUser.Email == "" {
+			ctx.IndentedJSON(http.StatusNotFound, responses.Response{Status: http.StatusNotFound, Message: "error", Data: map[string]interface{}{"message": "User not found"}})
+			return
+		}
+
+		// User's Email is yet to be verified
+		if !foundUser.EmailVerified {
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User Email is not verified"}})
+			return
+		}
+
+		// Generate tokens
+		token, refreshToken, _ := helper.GenerateAllTokens(foundUser.Email, foundUser.FirstName, foundUser.LastName, string(foundUser.UserType), *&foundUser.ID)
+		helper.UpdateAllTokens(token, refreshToken, foundUser.ID)
+
+		err = userCollection.FindOne(rootContext, bson.M{"_id": foundUser.ID}).Decode(&foundUser)
+		if err != nil {
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			return
+		}
+
+		// Return logged in user
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": foundUser}})
 	}
 }

@@ -181,3 +181,17 @@ func UserEmailExists(email string) (exists bool, err error) {
 	}
 	return count > 0, nil
 }
+
+// Update the user document in MongoDB to include the verification token.
+func StoreVerificationToken(userId, verificationToken string) error {
+	filter := bson.M{"_id": userId}
+	update := bson.M{"$set": bson.M{"verification_token": verificationToken}}
+
+	_, err := userCollection.UpdateOne(context.Background(), filter, update)
+	if err != nil {
+		log.Printf("Failed to store verification token for user %s: %v", userId, err)
+		return err
+	}
+
+	return nil
+}

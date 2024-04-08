@@ -6,10 +6,11 @@ import (
 
 // User represents a user in the application.
 type User struct {
-	ID              string        `bson:"_id"` // Unique identifier for the user
+	ID              string        `json:"id"bson:"_id"` // Unique identifier for the user
 	FirstName       string        `json:"first_name"validate:"required,min=2,max=255"`
 	LastName        string        `json:"last_name"validate:"required,min=2,max=255"`
 	Email           string        `json:"email"validate:"required,email"`
+	EmailVerified   bool          `json:"email_verified"`
 	HashedPassword  string        `json:"password,omitempty"bson:"password,omitempty"validate:"required,min=8"` // Stored hashed password, not returned in API responses
 	ProfilePhotoURL string        `json:"profile_photo_url"bson:"profile_photo_url,omitempty"`
 	UserType        UserType      `json:"user_type"`      // Enum for user type (Admin, User)

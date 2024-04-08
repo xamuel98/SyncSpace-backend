@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	config "github.com/xamuel98/syncspace-backend/internal/config"
 
@@ -24,7 +25,9 @@ func DBInstance() *mongo.Client {
 
 	opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 
-	rootContext := context.Background()
+	// rootContext := context.Background()
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 
 	// Create a new client and connect to the server
 	client, err := mongo.Connect(rootContext, opts)

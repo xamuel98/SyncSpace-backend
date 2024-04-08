@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	routes "github.com/xamuel98/syncspace-backend/internal/routes"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 	router.Use(gin.Logger())
 
 	// TODO: Use the routes
+	routes.AuthRoutes(router)
 
 	fmt.Printf("Starting server on port: %v\n", port)
 

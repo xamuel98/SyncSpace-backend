@@ -25,7 +25,6 @@ func DBInstance() *mongo.Client {
 
 	opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 
-	// rootContext := context.Background()
 	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -40,10 +39,6 @@ func DBInstance() *mongo.Client {
 	if err := client.Database("cluster0").RunCommand(rootContext, bson.D{{"ping", 1}}).Err(); err != nil {
 		panic(err)
 	}
-	// if err := client.Ping(rootContext, nil); err != nil {
-	// 	log.Fatal("Error pinging MongoDB server: ", err)
-	// 	panic(err)
-	// }
 
 	fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
 

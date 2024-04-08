@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -31,8 +32,6 @@ func init() {
 	}
 }
 
-var rootContext = context.Background()
-
 // Handle password hashing
 func HashPassword(password string) string {
 	// GenerateFromPassword returns the bcrypt hash of the password at the given cost.
@@ -45,7 +44,7 @@ func HashPassword(password string) string {
 	return string(bytes)
 }
 
-// Register new user
+// RegisterUser creates a new user and adds the user to the DB
 func RegisterUser() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var newUser models.User
@@ -96,6 +95,9 @@ func RegisterUser() gin.HandlerFunc {
 		newUser.Token = &accessToken
 		newUser.RefreshToken = &refreshToken
 
+		rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
 		// Insert newUser into database
 		_, insertErr := userCollection.InsertOne(rootContext, newUser)
 
@@ -105,16 +107,20 @@ func RegisterUser() gin.HandlerFunc {
 		}
 
 		// Store the generated verification token in the user object
-		if err := helper.StoreVerificationToken(newUser.ID, verificationToken); err != nil {
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to store verification token"}})
-			return
-		}
+		go func() {
+			if err := helper.StoreVerificationToken(newUser.ID, verificationToken); err != nil {
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to store verification token"}})
+				return
+			}
+		}()
 
 		// Send verification email
-		if err := service.SendVerificationEmail(newUser.Email, newUser.FirstName, verificationToken); err != nil {
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
-			return
-		}
+		go func() {
+			if err := service.SendVerificationEmail(newUser.Email, newUser.FirstName, verificationToken); err != nil {
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
+				return
+			}
+		}()
 
 		// Return user
 		userResponse := map[string]interface{}{
@@ -130,6 +136,40 @@ func RegisterUser() gin.HandlerFunc {
 		}
 
 		ctx.IndentedJSON(http.StatusOK, responses.Response{Data: map[string]interface{}{"data": userResponse}})
+	}
+}
+
+// VerifyEmailVerificationToken verifies the token sent to the user's email and updates the email_verified flag.
+func VerifyEmailVerificationToken() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		token := ctx.Query("token") // Token is sent as a query parameter
+		if token == "" {
+			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Verification token is required"}})
+			return
+		}
+
+		// Retrieve user ID from the token.
+		// Validate the token and extract the user ID.
+		userID, err := helper.ValidateVerificationToken(token)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
+			return
+		}
+
+		// Update the user's email_verified field in the database
+		filter := bson.M{"_id": userID}
+		update := bson.M{"$set": bson.M{"email_verified": true}}
+
+		rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		result, err := userCollection.UpdateOne(rootContext, filter, update)
+		if err != nil || result.ModifiedCount == 0 {
+			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to verify email"}})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Email verified successfully"}})
 	}
 }
 

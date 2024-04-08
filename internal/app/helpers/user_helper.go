@@ -28,10 +28,12 @@ type SignedDetails struct {
 }
 
 var userCollection *mongo.Collection
+var verificationTokensCollection *mongo.Collection
 
 func init() {
 	var err error
 	userCollection, err = database.OpenCollection(database.Client, "users")
+	verificationTokensCollection, err = database.OpenCollection(database.Client, "verificationTokens")
 	if err != nil {
 		log.Fatalf("Failed to open collection: %v", err)
 	}
@@ -159,8 +161,11 @@ func UpdateAllTokens(signedToken, signedRefreshToken, userId string) {
 
 	update := bson.D{{Key: "$set", Value: updateObj}}
 
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
 	_, err := userCollection.UpdateOne(
-		context.Background(),
+		rootContext,
 		filter,
 		update,
 		&opt,
@@ -175,7 +180,10 @@ func UpdateAllTokens(signedToken, signedRefreshToken, userId string) {
 
 // UserEmailExists checks if the email address exists in the database.
 func UserEmailExists(email string) (exists bool, err error) {
-	count, err := userCollection.CountDocuments(context.Background(), bson.M{"email": email})
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	count, err := userCollection.CountDocuments(rootContext, bson.M{"email": email})
 	if err != nil {
 		return false, err
 	}
@@ -184,14 +192,61 @@ func UserEmailExists(email string) (exists bool, err error) {
 
 // Update the user document in MongoDB to include the verification token.
 func StoreVerificationToken(userId, verificationToken string) error {
-	filter := bson.M{"_id": userId}
-	update := bson.M{"$set": bson.M{"verification_token": verificationToken}}
+	// Set the expiration time for the verification token, e.g., 30 minutes from now
+	expiresAt := time.Now().Add(1 * time.Minute)
 
-	_, err := userCollection.UpdateOne(context.Background(), filter, update)
+	// Define the document to insert into the verificationTokens collection
+	doc := bson.M{
+		"user_id":            userId,
+		"verification_token": verificationToken,
+		"created_at":         time.Now(),
+		"expires_at":         expiresAt,
+	}
+
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// Insert the document into the collection
+	_, err := verificationTokensCollection.InsertOne(rootContext, doc)
 	if err != nil {
 		log.Printf("Failed to store verification token for user %s: %v", userId, err)
 		return err
 	}
 
+	indexModel := mongo.IndexModel{
+		Keys:    bson.M{"expires_at": 1},                  // Index on the expires_at field
+		Options: options.Index().SetExpireAfterSeconds(0), // Documents will expire at the expires_at value
+	}
+
+	_, TTLErr := verificationTokensCollection.Indexes().CreateOne(rootContext, indexModel)
+	if TTLErr != nil {
+		log.Fatalf("Failed to create TTL index: %v", TTLErr)
+	}
+
 	return nil
+}
+
+// ValidateVerificationToken validates the verification token and returns the user ID if valid.
+func ValidateVerificationToken(token string) (string, error) {
+	var result struct {
+		UserID string `bson:"user_id"`
+	}
+	// The verification tokens are stored in a MongoDB collection named "verificationTokens"
+	// with documents having fields "verification_token" (string) and "userID" (string).
+	filter := bson.M{"verification_token": token}
+	fmt.Println("error filter:", filter)
+
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	err := verificationTokensCollection.FindOne(rootContext, filter).Decode(&result)
+	fmt.Println("error message:", err)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", fmt.Errorf("verification token not found")
+		}
+		return "", fmt.Errorf("error retrieving token: %v", err)
+	}
+
+	return result.UserID, nil
 }

@@ -135,15 +135,14 @@ func RegisterUser() gin.HandlerFunc {
 
 		// Return user
 		userResponse := map[string]interface{}{
-			"id":                userModel.ID,
-			"first_name":        newUser.FirstName,
-			"last_name":         newUser.LastName,
-			"email":             newUser.Email,
-			"user_type":         newUser.UserType,
-			"email_verified":    userModel.EmailVerified,
-			"profile_photo_url": userModel.ProfilePhotoURL,
-			"access_token":      accessToken,
-			"refresh_token":     refreshToken,
+			"id":             userModel.ID,
+			"first_name":     newUser.FirstName,
+			"last_name":      newUser.LastName,
+			"email":          newUser.Email,
+			"user_type":      newUser.UserType,
+			"email_verified": userModel.EmailVerified,
+			"access_token":   accessToken,
+			"refresh_token":  refreshToken,
 		}
 
 		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": userResponse}})
@@ -287,7 +286,7 @@ func LoginUser() gin.HandlerFunc {
 		passwordIsValid, err := helpers.VerifyPassword(user.HashedPassword, foundUser.HashedPassword)
 		// Password is invalid
 		if !passwordIsValid {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
@@ -312,6 +311,9 @@ func LoginUser() gin.HandlerFunc {
 			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
+
+		// Explicitly exclude the password from the response
+		foundUser.HashedPassword = ""
 
 		// Return logged in user
 		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": foundUser}})
@@ -400,13 +402,6 @@ func VerifyForgotPasswordToken() gin.HandlerFunc {
 			return
 		}
 
-		// After successfully verifying the token
-		// Deletes the token from the database
-		deleteErr := helper.DeleteVerificationToken(token)
-		if deleteErr != nil {
-			// Handle the error, maybe log it or return an internal server error response
-			log.Printf("Failed to delete forgot password verification token: %v", deleteErr)
-		}
 		ctx.JSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Token verified successfully. Proceed to reset password."}})
 	}
 }
@@ -464,5 +459,53 @@ func ResendForgotPasswordVerificationToken() gin.HandlerFunc {
 		}()
 
 		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Forgot password verification email resent successfully"}})
+	}
+}
+
+// ResetPassword resets the user's password
+func ResetPassword() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		// Define a struct to parse the request body
+		var requestBody requests.ResetPasswordRequest
+
+		if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			return
+		}
+
+		token := ctx.Param("token")
+		if token == "" {
+			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Reset token is required"}})
+			return
+		}
+
+		userID, err := helper.ValidateVerificationToken(token)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
+			return
+		}
+
+		// After successfully verifying the token
+		// Deletes the token from the database
+		deleteErr := helper.DeleteVerificationToken(token)
+		if deleteErr != nil {
+			// Handle the error, maybe log it or return an internal server error response
+			log.Printf("Failed to delete reset password verification token: %v", deleteErr)
+		}
+
+		hashedPassword := HashPassword(requestBody.HashedPassword)
+		filter := bson.M{"_id": userID}
+		update := bson.M{"$set": bson.M{"password": hashedPassword}}
+
+		rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		result, err := userCollection.UpdateOne(rootContext, filter, update)
+		if err != nil || result.ModifiedCount == 0 {
+			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to reset password"}})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Password reset successfully"}})
 	}
 }

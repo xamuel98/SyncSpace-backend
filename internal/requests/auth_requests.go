@@ -26,3 +26,8 @@ type LoginUserRequest struct {
 type ForgotPasswordRequest struct {
 	Email string `json:"email"`
 }
+
+// ResetPasswordRequest defines the structure for the USER RESET PASSWORD request.
+type ResetPasswordRequest struct {
+	HashedPassword string `json:"new_password"`
+}

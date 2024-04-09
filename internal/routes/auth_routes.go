@@ -26,4 +26,5 @@ func AuthRoutes(router *gin.Engine) {
 	AUTH.POST("/forgot-password", handlers.ForgotPassword())
 	AUTH.PUT("/verify-forgot-password/:token", handlers.VerifyForgotPasswordToken())
 	AUTH.POST("/resend-forgot-password-email", handlers.ResendForgotPasswordVerificationToken())
+	AUTH.PUT("/reset-password/:token", handlers.ResetPassword())
 }

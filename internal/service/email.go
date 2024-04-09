@@ -22,6 +22,14 @@ func init() {
 	if SYNCSPACE_URL == "" {
 		log.Fatal("SYNCSPACE_URL environment variable is not set")
 	}
+
+	if FOR_VERIFY_EMAIL == "" {
+		log.Fatal("FOR_VERIFY_EMAIL environment variable is not set")
+	}
+
+	if FOR_FORGOT_PASSWORD == "" {
+		log.Fatal("FOR_FORGOT_PASSWORD environment variable is not set")
+	}
 }
 
 func getMailSlurpClient() (*mailslurp.APIClient, context.Context) {

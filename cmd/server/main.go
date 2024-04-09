@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/xamuel98/syncspace-backend/internal/responses"
 	routes "github.com/xamuel98/syncspace-backend/internal/routes"
 )
 
@@ -29,8 +31,18 @@ func main() {
 	router := gin.Default()
 	router.Use(gin.Logger())
 
-	// TODO: Use the routes
+	// Use the routes
 	routes.AuthRoutes(router)
+
+	// Catch all requests that do not match any of the defined routes
+	router.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, responses.Response{Status: http.StatusNotFound, Message: "Page not found"})
+	})
+
+	// Catch requests to valid routes but with an unsupported HTTP method
+	router.NoMethod(func(c *gin.Context) {
+		c.JSON(http.StatusMethodNotAllowed, responses.Response{Status: http.StatusMethodNotAllowed, Message: "Method not allowed"})
+	})
 
 	fmt.Printf("Starting server on port: %v\n", port)
 

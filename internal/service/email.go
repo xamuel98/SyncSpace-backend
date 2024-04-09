@@ -11,6 +11,8 @@ import (
 
 var MAILSLURP_API_KEY = os.Getenv("MAILSLURP_API_KEY")
 var SYNCSPACE_URL = os.Getenv("SYNCSPACE_URL")
+var FOR_VERIFY_EMAIL = os.Getenv("FOR_VERIFY_EMAIL")
+var FOR_FORGOT_PASSWORD = os.Getenv("FOR_FORGOT_PASSWORD")
 
 func init() {
 	if MAILSLURP_API_KEY == "" {
@@ -36,17 +38,34 @@ func getMailSlurpClient() (*mailslurp.APIClient, context.Context) {
 }
 
 // SendVerificationEmail sends a verification email to the user's email address with a unique verification link.
-func SendVerificationEmail(userEmail, firstName, verificationToken string) error {
+func SendVerificationEmail(flag, userEmail, firstName, verificationToken string) error {
 	client, ctx := getMailSlurpClient()
 
-	// Construct the verification URL with the token
-	verificationURL := fmt.Sprintf(SYNCSPACE_URL+"/verify?token=%s", verificationToken)
+	var verificationURL string = ""
+	var subject string = ""
+	var body string = ""
+	var sendStrategy string = ""
+	var IsHTML bool = false
 
-	// Email subject and body
-	subject := "Please verify your email address"
-	body := fmt.Sprintf("Hello %s,\n\nPlease verify your email address by clicking on the link below:\n%s\n\nIf you did not request this, please ignore this email.", firstName, verificationURL)
-	sendStrategy := "SINGLE_MESSAGE"
-	isHTML := false
+	if flag == FOR_VERIFY_EMAIL {
+		// Construct the verification URL with the token
+		verificationURL = fmt.Sprintf(SYNCSPACE_URL+"/verify?token=%s", verificationToken)
+
+		// Email subject and body
+		subject = "Please verify your email address"
+		body = fmt.Sprintf("<h6>Hello %s,\n\n</h6><br/><p>Please verify your email address by clicking on the link below:\n<a href='%s' target='_blank' rel='noreferrer noopener'>Verify Email</a></p>\n\n<br/><p>If you did not request this, please ignore this email.</p>", firstName, verificationURL)
+		sendStrategy = "SINGLE_MESSAGE"
+		IsHTML = true
+	} else if flag == FOR_FORGOT_PASSWORD {
+		// Construct the verification URL with the token
+		verificationURL = fmt.Sprintf(SYNCSPACE_URL+"/verify-forgot-password?token=%s", verificationToken)
+
+		// Email subject and body
+		subject = "Reset password token"
+		body = fmt.Sprintf("<h6>Hello %s,\n\n</h6><br/><p>Please reset your account's password by clicking on the link below:\n<a href='%s' target='_blank' rel='noreferrer noopener'>Reset Password</a></p>\n\n<br/><p>If you did not request this, please ignore this email.</p>", firstName, verificationURL)
+		sendStrategy = "SINGLE_MESSAGE"
+		IsHTML = true
+	}
 
 	// create an inbox we can send email from
 	inbox, _, createInboxErrorMsg := client.InboxControllerApi.CreateInbox(ctx, nil)
@@ -61,7 +80,7 @@ func SendVerificationEmail(userEmail, firstName, verificationToken string) error
 		To:           &[]string{userEmail},
 		Subject:      &subject,
 		Body:         &body,
-		IsHTML:       &isHTML,
+		IsHTML:       &IsHTML,
 		SendStrategy: &sendStrategy, // or use another appropriate send strategy
 	}
 

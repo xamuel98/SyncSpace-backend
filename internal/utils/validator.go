@@ -87,3 +87,21 @@ func ValidateUserLogin(existingUser *requests.LoginUserRequest) (bool, map[strin
 
 	return true, nil
 }
+
+// ValidateUserForgotPassword func validates the body of user for forgot password
+func ValidateUserForgotPassword(existingUser *requests.ForgotPasswordRequest) (bool, map[string]string) {
+	errors := make(map[string]string)
+
+	// Validate the user email
+	if isEmailEmpty, errMsg := IsEmpty(existingUser.Email); isEmailEmpty {
+		errors["email"] = "Email " + errMsg
+	} else if !valid.IsEmail(existingUser.Email) {
+		errors["email"] = "Must be a valid email address"
+	}
+
+	if len(errors) > 0 {
+		return false, errors
+	}
+
+	return true, nil
+}

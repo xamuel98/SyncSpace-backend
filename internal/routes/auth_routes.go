@@ -21,6 +21,9 @@ func AuthRoutes(router *gin.Engine) {
 	// Define endpoints for authentication
 	AUTH.POST("/register", handlers.RegisterUser())
 	AUTH.POST("/login", handlers.LoginUser())
-	AUTH.GET("/verify-email", handlers.VerifyEmailVerificationToken())
-	AUTH.POST("/resend-verify-email", handlers.ResendEmailVerificationToken())
+	AUTH.PUT("/verify-email/:token", handlers.VerifyEmailVerificationToken())
+	AUTH.POST("/resend-verification-email", handlers.ResendEmailVerificationToken())
+	AUTH.POST("/forgot-password", handlers.ForgotPassword())
+	AUTH.PUT("/verify-forgot-password/:token", handlers.VerifyForgotPasswordToken())
+	AUTH.POST("/resend-forgot-password-email", handlers.ResendForgotPasswordVerificationToken())
 }

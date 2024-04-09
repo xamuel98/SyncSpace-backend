@@ -21,3 +21,8 @@ type LoginUserRequest struct {
 	Email          string `json:"email"`
 	HashedPassword string `json:"password"`
 }
+
+// ForgotPasswordRequest defines the structure for the USER FORGOT PASSWORD request.
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}

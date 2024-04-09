@@ -240,6 +240,21 @@ func StoreVerificationToken(userId, verificationToken string) error {
 	return nil
 }
 
+// DeleteVerificationToken deletes the verification token after it has been verified successfully
+func DeleteVerificationToken(token string) error {
+	filter := bson.M{"verification_token": token}
+
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	_, err := verificationTokensCollection.DeleteOne(rootContext, filter)
+	if err != nil {
+		log.Printf("Failed to delete verification token: %v", err)
+		return err
+	}
+	return nil
+}
+
 // ValidateVerificationToken validates the verification token and returns the user ID if valid.
 func ValidateVerificationToken(token string) (string, error) {
 	var result struct {

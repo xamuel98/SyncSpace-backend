@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/xamuel98/syncspace-backend/internal/responses"
 	routes "github.com/xamuel98/syncspace-backend/internal/routes"
+	"github.com/xamuel98/syncspace-backend/middleware"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 
 	// Initialize Gin router
 	router := gin.Default()
+	router.Use(middleware.CORSMiddleware())
 	router.Use(gin.Logger())
 
 	// Use the routes

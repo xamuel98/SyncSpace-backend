@@ -354,7 +354,7 @@ func ForgotPassword() gin.HandlerFunc {
 
 		err := userCollection.FindOne(rootContext, filter).Decode(&foundUser)
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to get user with email"}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Failed to get user with email"}})
 			return
 		}
 

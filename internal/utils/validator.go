@@ -73,12 +73,8 @@ func ValidateUserLogin(existingUser *requests.LoginUserRequest) (bool, map[strin
 	}
 
 	// Validate the user password
-	re := regexp.MustCompile("\\d") // regex check for at least one integer in string
-
 	if isPasswordEmpty, errMsg := IsEmpty(existingUser.HashedPassword); isPasswordEmpty {
 		errors["password"] = "Password " + errMsg
-	} else if !(len(existingUser.HashedPassword) >= 8 && valid.HasLowerCase(existingUser.HashedPassword) && valid.HasUpperCase(existingUser.HashedPassword) && re.MatchString(existingUser.HashedPassword)) {
-		errors["password"] = "Length of password should be at least 8 and it must be a combination of uppercase letters, lowercase letters and numbers"
 	}
 
 	if len(errors) > 0 {

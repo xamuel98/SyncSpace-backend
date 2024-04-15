@@ -319,7 +319,7 @@ func LoginUser() gin.HandlerFunc {
 		foundUser.HashedPassword = ""
 
 		// Return logged in user
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": foundUser}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "User login successful", Data: map[string]interface{}{"data": foundUser}})
 	}
 }
 

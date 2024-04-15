@@ -38,12 +38,12 @@ func main() {
 
 	// Catch all requests that do not match any of the defined routes
 	router.NoRoute(func(c *gin.Context) {
-		c.JSON(http.StatusNotFound, responses.Response{Status: http.StatusNotFound, Message: "Page not found"})
+		c.JSON(http.StatusNotFound, responses.Response{Success: false, Status: "NOT_FOUND", StatusCode: http.StatusNotFound, Message: "Page not found"})
 	})
 
 	// Catch requests to valid routes but with an unsupported HTTP method
 	router.NoMethod(func(c *gin.Context) {
-		c.JSON(http.StatusMethodNotAllowed, responses.Response{Status: http.StatusMethodNotAllowed, Message: "Method not allowed"})
+		c.JSON(http.StatusMethodNotAllowed, responses.Response{Success: false, Status: "METHOD_NOT_ALLOWED", StatusCode: http.StatusMethodNotAllowed, Message: "Method not allowed"})
 	})
 
 	fmt.Printf("Starting server on port: %v\n", port)

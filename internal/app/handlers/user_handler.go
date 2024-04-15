@@ -26,8 +26,11 @@ import (
 )
 
 var userCollection *mongo.Collection
-var FOR_VERIFY_EMAIL = os.Getenv("FOR_VERIFY_EMAIL")
-var FOR_FORGOT_PASSWORD = os.Getenv("FOR_FORGOT_PASSWORD")
+var FOR_VERIFY_EMAIL string = os.Getenv("FOR_VERIFY_EMAIL")
+var FOR_FORGOT_PASSWORD string = os.Getenv("FOR_FORGOT_PASSWORD")
+
+const FAILED_TOKEN_GENERATION_MESSAGE string = "Failed to generate verification token"
+const FAILED_TOKEN_STORAGE_MESSAGE string = "Failed to store verification token"
 
 func init() {
 	var err error
@@ -57,7 +60,7 @@ func RegisterUser() gin.HandlerFunc {
 		var userModel models.User // User model
 
 		if err := ctx.ShouldBindJSON(&newUser); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
@@ -65,7 +68,7 @@ func RegisterUser() gin.HandlerFunc {
 		_, errors := validator.ValidateUser(&newUser)
 
 		if errors != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
 			return
 		}
 
@@ -73,19 +76,19 @@ func RegisterUser() gin.HandlerFunc {
 		emailExists, emailExistsError := helper.UserEmailExists(newUser.Email)
 		if emailExistsError != nil {
 			log.Panic(emailExistsError)
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": emailExistsError}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": emailExistsError}})
 			return
 		}
 
 		if emailExists {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Email already exists!"}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Email already exists!"}})
 			return
 		}
 
 		// Generate a verification token
 		verificationToken, err := utils.GenerateVerificationToken()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to generate verification token"}})
+			ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_GENERATION_MESSAGE}})
 			return
 		}
 
@@ -113,14 +116,14 @@ func RegisterUser() gin.HandlerFunc {
 		_, insertErr := userCollection.InsertOne(rootContext, userModel)
 
 		if insertErr != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User was not created"}})
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "User was not created"}})
 			return
 		}
 
 		// Store the generated verification token in the verificationTokens collection
 		go func() {
 			if err := helper.StoreVerificationToken(userModel.ID, verificationToken); err != nil {
-				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to store verification token"}})
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_STORAGE_MESSAGE}})
 				return
 			}
 		}()
@@ -128,7 +131,7 @@ func RegisterUser() gin.HandlerFunc {
 		// Send verification email
 		go func() {
 			if err := service.SendVerificationEmail(FOR_VERIFY_EMAIL, newUser.Email, newUser.FirstName, verificationToken); err != nil {
-				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
 				return
 			}
 		}()
@@ -145,7 +148,7 @@ func RegisterUser() gin.HandlerFunc {
 			"refresh_token":  refreshToken,
 		}
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": userResponse}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": userResponse}})
 	}
 }
 
@@ -154,7 +157,7 @@ func VerifyEmailVerificationToken() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		token := ctx.Param("token") // Token is sent as a slug
 		if token == "" {
-			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Verification token is required"}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Verification token is required"}})
 			return
 		}
 
@@ -162,7 +165,7 @@ func VerifyEmailVerificationToken() gin.HandlerFunc {
 		// Validate the token and extract the user ID.
 		userID, err := helper.ValidateVerificationToken(token)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
 			return
 		}
 
@@ -183,11 +186,11 @@ func VerifyEmailVerificationToken() gin.HandlerFunc {
 
 		result, err := userCollection.UpdateOne(rootContext, filter, update)
 		if err != nil || result.ModifiedCount == 0 {
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to verify email"}})
+			ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to verify email"}})
 			return
 		}
 
-		ctx.JSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Email verified successfully"}})
+		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Email verified successfully"}})
 	}
 }
 
@@ -198,12 +201,12 @@ func ResendEmailVerificationToken() gin.HandlerFunc {
 		var requestBody requests.EmailRequest
 
 		if err := ctx.ShouldBindJSON(&requestBody); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
 		if requestBody.Email == "" {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User email is required"}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User email is required"}})
 			return
 		}
 
@@ -216,21 +219,21 @@ func ResendEmailVerificationToken() gin.HandlerFunc {
 
 		err := userCollection.FindOne(rootContext, filter).Decode(&user)
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to retrieve user"}})
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to retrieve user"}})
 			return
 		}
 
 		// Generate a verification token
 		verificationToken, err := utils.GenerateVerificationToken()
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to generate verification token"}})
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_GENERATION_MESSAGE}})
 			return
 		}
 
 		// Store the generated verification token in the user object
 		go func() {
 			if err := helper.StoreVerificationToken(user.ID, verificationToken); err != nil {
-				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to store verification token"}})
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_STORAGE_MESSAGE}})
 				return
 			}
 		}()
@@ -238,12 +241,12 @@ func ResendEmailVerificationToken() gin.HandlerFunc {
 		// Send verification email
 		go func() {
 			if err := service.SendVerificationEmail(FOR_VERIFY_EMAIL, user.Email, user.FirstName, verificationToken); err != nil {
-				ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
+				ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
 				return
 			}
 		}()
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Verification email resent successfully"}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Verification email resent successfully"}})
 	}
 }
 
@@ -254,14 +257,14 @@ func LoginUser() gin.HandlerFunc {
 		var foundUser models.User
 
 		if err := ctx.ShouldBindJSON(&user); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
 		// Validate if the email and password are in correct format
 		_, errors := validator.ValidateUserLogin(&user)
 		if errors != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
 			return
 		}
 
@@ -274,11 +277,11 @@ func LoginUser() gin.HandlerFunc {
 		err := userCollection.FindOne(rootContext, filter).Decode(&foundUser)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Email or password is incorrect"}})
+				ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Email or password is incorrect"}})
 				return
 			}
 
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err}})
 			return
 		}
 
@@ -286,19 +289,19 @@ func LoginUser() gin.HandlerFunc {
 		passwordIsValid, err := helpers.VerifyPassword(user.HashedPassword, foundUser.HashedPassword)
 		// Password is invalid
 		if !passwordIsValid {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
 		// Email address does not exist
 		if foundUser.Email == "" {
-			ctx.IndentedJSON(http.StatusNotFound, responses.Response{Status: http.StatusNotFound, Message: "error", Data: map[string]interface{}{"message": "User not found"}})
+			ctx.IndentedJSON(http.StatusNotFound, responses.Response{Success: false, Status: "NOT_FOUND", StatusCode: http.StatusNotFound, Message: "error", Data: map[string]interface{}{"message": "User not found"}})
 			return
 		}
 
 		// User's Email is yet to be verified
 		if !foundUser.EmailVerified {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User Email is not verified"}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User Email is not verified"}})
 			return
 		}
 
@@ -308,7 +311,7 @@ func LoginUser() gin.HandlerFunc {
 
 		err = userCollection.FindOne(rootContext, bson.M{"_id": foundUser.ID}).Decode(&foundUser)
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
@@ -316,7 +319,7 @@ func LoginUser() gin.HandlerFunc {
 		foundUser.HashedPassword = ""
 
 		// Return logged in user
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": foundUser}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": foundUser}})
 	}
 }
 
@@ -327,14 +330,14 @@ func ForgotPassword() gin.HandlerFunc {
 		var foundUser models.User
 
 		if err := ctx.ShouldBindJSON(&user); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
 		// Validate if the email are in correct format
 		_, errors := validator.ValidateUserForgotPassword(&user)
 		if errors != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
 			return
 		}
 
@@ -342,7 +345,7 @@ func ForgotPassword() gin.HandlerFunc {
 		_, emailExistsError := helper.UserEmailExists(user.Email)
 		if emailExistsError != nil {
 			log.Panic(emailExistsError)
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": emailExistsError}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": emailExistsError}})
 			return
 		}
 
@@ -354,21 +357,21 @@ func ForgotPassword() gin.HandlerFunc {
 
 		err := userCollection.FindOne(rootContext, filter).Decode(&foundUser)
 		if err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Failed to get user with email"}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Failed to get user with email"}})
 			return
 		}
 
 		// Generate a verification token
 		verificationToken, err := utils.GenerateVerificationToken()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to generate verification token"}})
+			ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_GENERATION_MESSAGE}})
 			return
 		}
 
 		// Store the generated verification token in the verificationTokens collection
 		go func() {
 			if err := helper.StoreVerificationToken(foundUser.ID, verificationToken); err != nil {
-				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to store verification token"}})
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_STORAGE_MESSAGE}})
 				return
 			}
 		}()
@@ -376,12 +379,12 @@ func ForgotPassword() gin.HandlerFunc {
 		// Send verification email
 		go func() {
 			if err := service.SendVerificationEmail(FOR_FORGOT_PASSWORD, foundUser.Email, foundUser.FirstName, verificationToken); err != nil {
-				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
 				return
 			}
 		}()
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Data: map[string]interface{}{"message": "Forgot password verification email sent successfully"}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Data: map[string]interface{}{"message": "Forgot password verification email sent successfully"}})
 	}
 }
 
@@ -390,7 +393,7 @@ func VerifyForgotPasswordToken() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		token := ctx.Param("token") // Token is sent as a slug
 		if token == "" {
-			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Verification token is required"}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Verification token is required"}})
 			return
 		}
 
@@ -398,11 +401,11 @@ func VerifyForgotPasswordToken() gin.HandlerFunc {
 		// Validate the token and extract the user ID.
 		_, err := helper.ValidateVerificationToken(token)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
 			return
 		}
 
-		ctx.JSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Token verified successfully. Proceed to reset password."}})
+		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Token verified successfully. Proceed to reset password."}})
 	}
 }
 
@@ -413,12 +416,12 @@ func ResendForgotPasswordVerificationToken() gin.HandlerFunc {
 		var requestBody requests.EmailRequest
 
 		if err := ctx.ShouldBindJSON(&requestBody); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
 		if requestBody.Email == "" {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User email is required"}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "User email is required"}})
 			return
 		}
 
@@ -431,21 +434,21 @@ func ResendForgotPasswordVerificationToken() gin.HandlerFunc {
 
 		err := userCollection.FindOne(rootContext, filter).Decode(&user)
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to retrieve user"}})
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to retrieve user"}})
 			return
 		}
 
 		// Generate a verification token
 		verificationToken, err := utils.GenerateVerificationToken()
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to generate verification token"}})
+			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_GENERATION_MESSAGE}})
 			return
 		}
 
 		// Store the generated verification token in the user object
 		go func() {
 			if err := helper.StoreVerificationToken(user.ID, verificationToken); err != nil {
-				ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to store verification token"}})
+				ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_STORAGE_MESSAGE}})
 				return
 			}
 		}()
@@ -453,12 +456,12 @@ func ResendForgotPasswordVerificationToken() gin.HandlerFunc {
 		// Send verification email
 		go func() {
 			if err := service.SendVerificationEmail(FOR_FORGOT_PASSWORD, user.Email, user.FirstName, verificationToken); err != nil {
-				ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
+				ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
 				return
 			}
 		}()
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Forgot password verification email resent successfully"}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Forgot password verification email resent successfully"}})
 	}
 }
 
@@ -469,19 +472,19 @@ func ResetPassword() gin.HandlerFunc {
 		var requestBody requests.ResetPasswordRequest
 
 		if err := ctx.ShouldBindJSON(&requestBody); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
 			return
 		}
 
 		token := ctx.Param("token")
 		if token == "" {
-			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Reset token is required"}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Reset token is required"}})
 			return
 		}
 
 		userID, err := helper.ValidateVerificationToken(token)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, responses.Response{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
+			ctx.JSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Invalid or expired token"}})
 			return
 		}
 
@@ -502,10 +505,10 @@ func ResetPassword() gin.HandlerFunc {
 
 		result, err := userCollection.UpdateOne(rootContext, filter, update)
 		if err != nil || result.ModifiedCount == 0 {
-			ctx.JSON(http.StatusInternalServerError, responses.Response{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to reset password"}})
+			ctx.JSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to reset password"}})
 			return
 		}
 
-		ctx.JSON(http.StatusOK, responses.Response{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Password reset successfully"}})
+		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Password reset successfully"}})
 	}
 }

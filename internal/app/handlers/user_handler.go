@@ -148,7 +148,7 @@ func RegisterUser() gin.HandlerFunc {
 			"refresh_token":  refreshToken,
 		}
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": userResponse}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "User account created successfully", Data: map[string]interface{}{"data": userResponse}})
 	}
 }
 
@@ -190,7 +190,7 @@ func VerifyEmailVerificationToken() gin.HandlerFunc {
 			return
 		}
 
-		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Email verified successfully"}})
+		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "Email verified successfully"})
 	}
 }
 
@@ -246,7 +246,7 @@ func ResendEmailVerificationToken() gin.HandlerFunc {
 			}
 		}()
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Verification email resent successfully"}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "Verification email resent successfully"})
 	}
 }
 
@@ -384,7 +384,7 @@ func ForgotPassword() gin.HandlerFunc {
 			}
 		}()
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Data: map[string]interface{}{"message": "Forgot password verification email sent successfully"}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "Forgot password verification email sent successfully"})
 	}
 }
 
@@ -405,7 +405,7 @@ func VerifyForgotPasswordToken() gin.HandlerFunc {
 			return
 		}
 
-		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Token verified successfully. Proceed to reset password."}})
+		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "Token verified successfully. Proceed to reset password."})
 	}
 }
 
@@ -461,7 +461,7 @@ func ResendForgotPasswordVerificationToken() gin.HandlerFunc {
 			}
 		}()
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Forgot password verification email resent successfully"}})
+		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "Forgot password verification email resent successfully"})
 	}
 }
 
@@ -509,6 +509,6 @@ func ResetPassword() gin.HandlerFunc {
 			return
 		}
 
-		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "success", Data: map[string]interface{}{"message": "Password reset successfully"}})
+		ctx.JSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "Password reset successful"})
 	}
 }

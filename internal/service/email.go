@@ -79,7 +79,7 @@ func SendVerificationEmail(flag, userEmail, firstName, verificationToken string)
 	inbox, _, createInboxErrorMsg := client.InboxControllerApi.CreateInbox(ctx, nil)
 	if createInboxErrorMsg != nil {
 		// Handle the error appropriately
-		log.Fatalf("Failed to create inbox: %v", createInboxErrorMsg)
+		log.Printf("Failed to create inbox: %v", createInboxErrorMsg)
 		return createInboxErrorMsg
 	}
 

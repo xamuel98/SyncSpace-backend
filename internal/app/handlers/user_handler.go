@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/xamuel98/syncspace-backend/internal/app/helpers"
@@ -55,101 +57,122 @@ func HashPassword(password string) string {
 // RegisterUser creates a new user and adds the user to the DB
 func RegisterUser() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		// Define a struct to parse the request body
 		var newUser requests.RegisterUserRequest
-		var userModel models.User // User model
 
-		if err := ctx.ShouldBindJSON(&newUser); err != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": err.Error()}})
+		// Bind JSON and validate request
+		if err := bindAndValidateUserRequest(ctx, &newUser); err != nil {
+			return // Response is handled within the function
+		}
+
+		// Check if email exists
+		if emailExists, _ := helper.UserEmailExists(newUser.Email); emailExists {
+			responses.SendErrorResponse(ctx, http.StatusBadRequest, "BAD_REQUEST", "Email already exists!")
 			return
 		}
 
-		// validate if the email, firstname, lastname, userType, and password are in correct format
-		_, errors := validator.ValidateUser(&newUser)
-
-		if errors != nil {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": errors}})
-			return
-		}
-
-		// Check if there's a user with the same email address.
-		emailExists, emailExistsError := helper.UserEmailExists(newUser.Email)
-		if emailExistsError != nil {
-			log.Panic(emailExistsError)
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": emailExistsError}})
-			return
-		}
-
-		if emailExists {
-			ctx.IndentedJSON(http.StatusBadRequest, responses.Response{Success: false, Status: "BAD_REQUEST", StatusCode: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"message": "Email already exists!"}})
-			return
-		}
-
-		// Generate a verification token
-		verificationToken, err := utils.GenerateVerificationToken()
+		// Create user and handle errors
+		userModel, err := createUserModel(&newUser)
 		if err != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_GENERATION_MESSAGE}})
+			responses.SendErrorResponse(ctx, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", err.Error())
 			return
 		}
-
-		// Hash the password with a random salt
-		hashedPassword := HashPassword(newUser.HashedPassword)
-
-		// Create the user object
-		userModel.ID = primitive.NewObjectID().Hex()
-		userModel.FirstName = newUser.FirstName
-		userModel.LastName = newUser.LastName
-		userModel.Email = newUser.Email
-		userModel.EmailVerified = false
-		userModel.HashedPassword = string(hashedPassword)
-		userModel.UserType = newUser.UserType
-		accessToken, refreshToken, _ := helper.GenerateAllTokens(newUser.Email, newUser.FirstName, newUser.LastName, string(newUser.UserType), userModel.ID)
-		userModel.Token = &accessToken
-		userModel.RefreshToken = &refreshToken
-		userModel.CreatedAt, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		userModel.UpdatedAt, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-
-		rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
 
 		// Insert userModel into database
-		_, insertErr := userCollection.InsertOne(rootContext, userModel)
+		if err := insertUserModel(ctx, userModel); err != nil {
+			return // Response is handled within the function
+		}
 
-		if insertErr != nil {
-			ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "User was not created"}})
+		// Asynchronously handle verification token and email sending
+		handleVerificationProcess(ctx, userModel, &newUser)
+
+		// Return user response
+		sendUserResponse(ctx, userModel, &newUser)
+	}
+}
+
+func bindAndValidateUserRequest(ctx *gin.Context, newUser *requests.RegisterUserRequest) error {
+	if err := ctx.ShouldBindJSON(newUser); err != nil {
+		responses.SendErrorResponse(ctx, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return err
+	}
+
+	_, errors_ := validator.ValidateUser(newUser)
+	if errors_ != nil {
+		// Convert the slice of strings (errors_) into a single string
+		errorMessage := strings.Join(errors_, ", ")
+		responses.SendErrorResponse(ctx, http.StatusBadRequest, "BAD_REQUEST", errorMessage)
+		return errors.New(errorMessage)
+	}
+
+	return nil
+}
+
+func createUserModel(newUser *requests.RegisterUserRequest) (models.User, error) {
+	primitiveID := primitive.NewObjectID().Hex()
+	accessToken, refreshToken, _ := helper.GenerateAllTokens(newUser.Email, newUser.FirstName, newUser.LastName, string(newUser.UserType), primitiveID)
+	CreatedAt, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	UpdatedAt, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+
+	hashedPassword := HashPassword(newUser.HashedPassword)
+	userModel := models.User{
+		ID:             primitiveID,
+		FirstName:      newUser.FirstName,
+		LastName:       newUser.LastName,
+		Email:          newUser.Email,
+		EmailVerified:  false,
+		HashedPassword: hashedPassword,
+		UserType:       newUser.UserType,
+		Token:          &accessToken,
+		RefreshToken:   &refreshToken,
+		CreatedAt:      CreatedAt,
+		UpdatedAt:      UpdatedAt,
+	}
+	return userModel, nil
+}
+
+func insertUserModel(ctx *gin.Context, userModel models.User) error {
+	rootContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	_, err := userCollection.InsertOne(rootContext, userModel)
+	if err != nil {
+		responses.SendErrorResponse(ctx, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "User was not created")
+		return err
+	}
+
+	return nil
+}
+
+func handleVerificationProcess(ctx *gin.Context, userModel models.User, newUser *requests.RegisterUserRequest) {
+	go func() {
+		verificationToken, err := utils.GenerateVerificationToken()
+		if err != nil {
+			log.Printf("Error generating verification token: %v", err)
 			return
 		}
 
-		// Store the generated verification token in the verificationTokens collection
-		go func() {
-			if err := helper.StoreVerificationToken(userModel.ID, verificationToken); err != nil {
-				ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": FAILED_TOKEN_STORAGE_MESSAGE}})
-				return
-			}
-		}()
-
-		// Send verification email
-		go func() {
-			if err := service.SendVerificationEmail(FOR_VERIFY_EMAIL, newUser.Email, newUser.FirstName, verificationToken); err != nil {
-				ctx.IndentedJSON(http.StatusInternalServerError, responses.Response{Success: false, Status: "INTERNAL_SERVER_ERROR", StatusCode: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"message": "Failed to send verification email"}})
-				return
-			}
-		}()
-
-		// Return user
-		userResponse := map[string]interface{}{
-			"id":             userModel.ID,
-			"first_name":     newUser.FirstName,
-			"last_name":      newUser.LastName,
-			"email":          newUser.Email,
-			"user_type":      newUser.UserType,
-			"email_verified": userModel.EmailVerified,
-			"access_token":   accessToken,
-			"refresh_token":  refreshToken,
+		if err := helper.StoreVerificationToken(userModel.ID, verificationToken); err != nil {
+			log.Printf("Error storing verification token: %v", err)
+			return
 		}
 
-		ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "User account created successfully", Data: map[string]interface{}{"data": userResponse}})
+		if err := service.SendVerificationEmail(FOR_VERIFY_EMAIL, newUser.Email, newUser.FirstName, verificationToken); err != nil {
+			log.Printf("Error sending verification email: %v", err)
+			return
+		}
+	}()
+}
+
+func sendUserResponse(ctx *gin.Context, userModel models.User, newUser *requests.RegisterUserRequest) {
+	userResponse := map[string]interface{}{
+		"id":             userModel.ID,
+		"first_name":     newUser.FirstName,
+		"last_name":      newUser.LastName,
+		"email":          newUser.Email,
+		"user_type":      newUser.UserType,
+		"email_verified": userModel.EmailVerified,
 	}
+	ctx.IndentedJSON(http.StatusOK, responses.Response{Success: true, Status: "OK", StatusCode: http.StatusOK, Message: "User account created successfully", Data: map[string]interface{}{"data": userResponse}})
 }
 
 // VerifyEmailVerificationToken verifies the token sent to the user's email and updates the email_verified flag.
